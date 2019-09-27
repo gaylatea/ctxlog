@@ -56,6 +56,20 @@ func With(ctx context.Context, k string, v interface{}) context.Context {
 	return lc
 }
 
+// WithValue is a hack to support adding WithValue to contexts without losing
+// logging information.
+func WithValue(parent context.Context, k string, v interface{}) context.Context {
+	switch parent.(type) {
+	case loggingContext:
+		lc := parent.(loggingContext)
+		lc.Context = context.WithValue(lc.Context, k, v)
+		return lc
+	default:
+		ctx := context.WithValue(parent, k, v)
+		return loggingContext{Context: ctx, tags: map[string]interface{}{}}
+	}
+}
+
 // logf prints a log to the console with colorized tags.
 func logf(ctx context.Context, c *color.Color, levelname string, msg string, args ...interface{}) {
 	// TODO(silversupreme): Implement some logging to like JSON here when not attached to a TTY.
