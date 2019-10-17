@@ -2,35 +2,44 @@ package ctxlog
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 )
 
 var (
-	// The logging context will always include a random UUID which is tagged
-	// to uniquely identify this particular version/invocation of this program.
-	// Allows us to see when restarts happen/induce changes in behaviour.
-	thisUUID string
-
-	debug bool
+	debug   = flag.Bool("debug", false, "Enable debug logging.")
+	noColor = flag.Bool("nocolor", false, "Disable colored output.")
 
 	infoC  *color.Color = color.New(color.FgCyan, color.Bold)
 	debugC *color.Color = color.New(color.FgMagenta, color.Bold)
 	errC   *color.Color = color.New(color.FgRed, color.Bold)
+	fatalC *color.Color = color.New(color.FgBlack, color.BgRed, color.Bold)
 )
 
-func init() {
-	id, err := uuid.NewRandom()
-	if err != nil {
-		// Think about how to handle this error in case others use it?
-		fmt.Printf("[ERROR] Could not initialize a UUID for ctxlog!\n")
-		os.Exit(1)
+// Context returns a root context that is suitable for logging.
+func Context() (context.Context, error) {
+	// Disable colorized log output if we've been requested to do that.
+	if *noColor {
+		infoC.DisableColor()
+		debugC.DisableColor()
+		errC.DisableColor()
+		fatalC.DisableColor()
 	}
 
-	thisUUID = id.String()
+	// The logging context will always include a random UUID which is tagged
+	// to uniquely identify this particular version/invocation of this program.
+	// Allows us to see when restarts happen/induce changes in behaviour.
+	id, err := uuid.NewRandom()
+	if err != nil {
+		return nil, errors.Wrapf(err, "Could not generate a new context")
+	}
+
+	return With(context.Background(), "uuid", id.String()), nil
 }
 
 // loggingContext allows structured logging information (in the form of "tags")
@@ -38,7 +47,8 @@ func init() {
 type loggingContext struct {
 	context.Context
 
-	tags map[string]interface{}
+	tags  map[string]interface{}
+	order []string
 }
 
 // With adds a tag to the context, which is carried into subsequent logging calls.
@@ -52,6 +62,9 @@ func With(ctx context.Context, k string, v interface{}) context.Context {
 	}
 
 	lc.tags[k] = v
+	// TODO(silversupreme): Make this work better with calls that override
+	// existing tags.
+	lc.order = append(lc.order, k)
 
 	return lc
 }
@@ -74,28 +87,20 @@ func WithValue(parent context.Context, k string, v interface{}) context.Context 
 func logf(ctx context.Context, c *color.Color, levelname string, msg string, args ...interface{}) {
 	// TODO(silversupreme): Implement some logging to like JSON here when not attached to a TTY.
 	msg = fmt.Sprintf(msg, args...)
-	s := fmt.Sprintf("[%s] %-40s %s=%s", c.Sprintf("%-6s", levelname), msg, c.Sprint("uuid"), thisUUID)
+	s := fmt.Sprintf("[%s] %-40s", c.Sprintf("%-6s", levelname), msg)
 
 	switch ctx.(type) {
 	case loggingContext:
 		lc := ctx.(loggingContext)
-		for k, v := range lc.tags {
-			s = fmt.Sprintf("%s %s=%v", s, c.Sprint(k), v)
+		// Ensure that tags are printed in the order that they were added,
+		// which creates a nice nesting effect for logs.
+		for _, k := range lc.order {
+			s = fmt.Sprintf("%s %s=%v", s, c.Sprint(k), lc.tags[k])
 		}
 	default:
 	}
 
 	fmt.Println(s)
-}
-
-// EnableDebug will print debug output.
-func EnableDebug() {
-	debug = true
-}
-
-// DisableDebug will turn off debug output.
-func DisableDebug() {
-	debug = false
 }
 
 // Infof prints an informational string to the console.
@@ -105,7 +110,7 @@ func Infof(ctx context.Context, msg string, args ...interface{}) {
 
 // Debugf prints debug info if that has been enabled in the program.
 func Debugf(ctx context.Context, msg string, args ...interface{}) {
-	if !debug {
+	if !*debug {
 		return
 	}
 
@@ -115,4 +120,10 @@ func Debugf(ctx context.Context, msg string, args ...interface{}) {
 // Errorf prints an error log to the console.
 func Errorf(ctx context.Context, msg string, args ...interface{}) {
 	logf(ctx, errC, "ERROR", msg, args...)
+}
+
+// Fatalf prints an error and immediately stops execution.
+func Fatalf(ctx context.Context, msg string, args ...interface{}) {
+	logf(ctx, fatalC, "FATAL", msg, args...)
+	os.Exit(1)
 }
