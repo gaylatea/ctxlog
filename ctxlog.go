@@ -3,68 +3,92 @@ package ctxlog
 import (
 	"context"
 	"flag"
-	"fmt"
 	"os"
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 )
 
 var (
-	debug   = flag.Bool("debug", false, "Enable debug logging.")
-	noColor = flag.Bool("nocolor", false, "Disable colored output.")
+	debug             = flag.Bool("debug", false, "Enable debug logging.")
+	noColorDEPRECATED = flag.Bool("nocolor", false, "Disable colored output.")
 
 	infoC  *color.Color = color.New(color.FgCyan, color.Bold)
 	debugC *color.Color = color.New(color.FgMagenta, color.Bold)
 	errC   *color.Color = color.New(color.FgRed, color.Bold)
 	fatalC *color.Color = color.New(color.FgBlack, color.BgRed, color.Bold)
+
+	// The logging context will always include a random UUID which is tagged
+	// to uniquely identify this particular version/invocation of this program.
+	// Allows us to see when restarts happen/induce changes in behaviour.
+	globalUUID uuid.UUID
 )
 
-// Context returns a root context that is suitable for logging.
-func Context() (context.Context, error) {
+func init() {
 	// Disable colorized log output if we've been requested to do that.
-	if *noColor {
+	if noColor := os.Getenv("DISABLE_COLOR_OUTPUT"); noColor == "1" {
 		infoC.DisableColor()
 		debugC.DisableColor()
 		errC.DisableColor()
 		fatalC.DisableColor()
 	}
 
-	// The logging context will always include a random UUID which is tagged
-	// to uniquely identify this particular version/invocation of this program.
-	// Allows us to see when restarts happen/induce changes in behaviour.
 	id, err := uuid.NewRandom()
 	if err != nil {
-		return nil, errors.Wrapf(err, "Could not generate a new context")
+		globalUUID = uuid.Nil
+		console.Log(context.Background(), errC, "ERROR",
+			"Could not create a unique ID for this application: %v", err)
+	} else {
+		globalUUID = id
 	}
-
-	return With(context.Background(), "uuid", id.String()), nil
 }
 
-// loggingContext allows structured logging information (in the form of "tags")
+// LoggingContext allows structured logging information (in the form of "tags")
 // to be carried across API boundaries in an application.
-type loggingContext struct {
+type LoggingContext struct {
 	context.Context
 
-	tags  map[string]interface{}
+	tags  map[string][]interface{}
 	order []string
+}
+
+// ToJSON returns a representation of the context's current data suitable for
+// logging to an external database.
+func (c LoggingContext) ToJSON() map[string]interface{} {
+	ret := map[string]interface{}{
+		"uuid": globalUUID.String(),
+	}
+
+	for k, v := range c.tags {
+		// Special-case single-item lists, to just use the value. Helps with
+		// querying in the future.
+		if len(v) == 1 {
+			ret[k] = v[0]
+		} else {
+			ret[k] = v
+		}
+	}
+
+	return ret
 }
 
 // With adds a tag to the context, which is carried into subsequent logging calls.
 func With(ctx context.Context, k string, v interface{}) context.Context {
-	var lc loggingContext
+	var lc LoggingContext
 	switch ctx.(type) {
-	case loggingContext:
-		lc = ctx.(loggingContext)
+	case LoggingContext:
+		lc = ctx.(LoggingContext)
 	default:
-		lc = loggingContext{Context: ctx, tags: map[string]interface{}{}}
+		lc = LoggingContext{Context: ctx, tags: map[string][]interface{}{}}
 	}
 
-	lc.tags[k] = v
-	// TODO(silversupreme): Make this work better with calls that override
-	// existing tags.
-	lc.order = append(lc.order, k)
+	_, exists := lc.tags[k]
+	lc.tags[k] = append(lc.tags[k], v)
+
+	// Don't print multiple times.
+	if !exists {
+		lc.order = append(lc.order, k)
+	}
 
 	return lc
 }
@@ -73,34 +97,22 @@ func With(ctx context.Context, k string, v interface{}) context.Context {
 // logging information.
 func WithValue(parent context.Context, k string, v interface{}) context.Context {
 	switch parent.(type) {
-	case loggingContext:
-		lc := parent.(loggingContext)
+	case LoggingContext:
+		lc := parent.(LoggingContext)
 		lc.Context = context.WithValue(lc.Context, k, v)
 		return lc
 	default:
 		ctx := context.WithValue(parent, k, v)
-		return loggingContext{Context: ctx, tags: map[string]interface{}{}}
+		return LoggingContext{Context: ctx, tags: map[string][]interface{}{}}
 	}
 }
 
-// logf prints a log to the console with colorized tags.
 func logf(ctx context.Context, c *color.Color, levelname string, msg string, args ...interface{}) {
-	// TODO(silversupreme): Implement some logging to like JSON here when not attached to a TTY.
-	msg = fmt.Sprintf(msg, args...)
-	s := fmt.Sprintf("[%s] %-40s", c.Sprintf("%-6s", levelname), msg)
-
-	switch ctx.(type) {
-	case loggingContext:
-		lc := ctx.(loggingContext)
-		// Ensure that tags are printed in the order that they were added,
-		// which creates a nice nesting effect for logs.
-		for _, k := range lc.order {
-			s = fmt.Sprintf("%s %s=%v", s, c.Sprint(k), lc.tags[k])
+	for name, sink := range sinks {
+		if err := sink.Log(ctx, c, levelname, msg, args...); err != nil {
+			console.Log(ctx, errC, "ERROR", "Could not process log sink '%s': %v", name, err)
 		}
-	default:
 	}
-
-	fmt.Println(s)
 }
 
 // Infof prints an informational string to the console.
