@@ -107,6 +107,25 @@ func WithValue(parent context.Context, k string, v interface{}) context.Context 
 	}
 }
 
+// Clone creates a copy of `source` with all of the tags intact.
+// TODO: Make a version of this that takes in a context and copies over.
+func Clone(source context.Context) context.Context {
+	switch source.(type) {
+	case LoggingContext:
+		lc := source.(LoggingContext)
+		return LoggingContext{
+			Context: context.Background(),
+			tags:    lc.tags,
+			order:   lc.order,
+		}
+	default:
+		return LoggingContext{
+			Context: context.Background(),
+			tags:    map[string][]interface{}{},
+		}
+	}
+}
+
 func logf(ctx context.Context, c *color.Color, levelname string, msg string, args ...interface{}) {
 	for name, sink := range sinks {
 		if err := sink.Log(ctx, c, levelname, msg, args...); err != nil {
