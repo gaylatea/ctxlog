@@ -74,23 +74,42 @@ func (c LoggingContext) ToJSON() map[string]interface{} {
 
 // With adds a tag to the context, which is carried into subsequent logging calls.
 func With(ctx context.Context, k string, v interface{}) context.Context {
-	var lc LoggingContext
-	switch ctx.(type) {
-	case LoggingContext:
-		lc = ctx.(LoggingContext)
-	default:
-		lc = LoggingContext{Context: ctx, tags: map[string][]interface{}{}}
+	ret := LoggingContext{
+		tags:  map[string][]interface{}{},
+		order: []string{},
 	}
 
-	_, exists := lc.tags[k]
-	lc.tags[k] = append(lc.tags[k], v)
+	switch ctx.(type) {
+	case LoggingContext:
+		lc := ctx.(LoggingContext)
+		ret.tags = make(map[string][]interface{}, (len(lc.tags) + 1))
+		ret.order = make([]string, len(lc.order))
+		ret.Context = lc.Context
+
+		// This sucks, in a lot of ways, but it's necessary to allow us to properly
+		// log with ctxlog without downstream functions overwriting or adding to
+		// the tag set for a given context.
+		for i, x := range lc.order {
+			ret.order[i] = x
+		}
+
+		for i, x := range lc.tags {
+			ret.tags[i] = x
+		}
+	default:
+		ret.Context = ctx
+		ret.tags = make(map[string][]interface{}, 1)
+	}
+
+	_, exists := ret.tags[k]
+	ret.tags[k] = append(ret.tags[k], v)
 
 	// Don't print multiple times.
 	if !exists {
-		lc.order = append(lc.order, k)
+		ret.order = append(ret.order, k)
 	}
 
-	return lc
+	return ret
 }
 
 // WithValue is a hack to support adding WithValue to contexts without losing
@@ -113,11 +132,24 @@ func Clone(source context.Context) context.Context {
 	switch source.(type) {
 	case LoggingContext:
 		lc := source.(LoggingContext)
-		return LoggingContext{
+		ret := LoggingContext{
 			Context: context.Background(),
-			tags:    lc.tags,
-			order:   lc.order,
+			tags:    make(map[string][]interface{}, len(lc.tags)),
+			order:   make([]string, len(lc.order)),
 		}
+
+		// This sucks, in a lot of ways, but it's necessary to allow us to properly
+		// log with ctxlog without downstream functions overwriting or adding to
+		// the tag set for a given context.
+		for i, x := range lc.order {
+			ret.order[i] = x
+		}
+
+		for i, x := range lc.tags {
+			ret.tags[i] = x
+		}
+
+		return ret
 	default:
 		return LoggingContext{
 			Context: context.Background(),

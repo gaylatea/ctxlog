@@ -14,16 +14,22 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	ctxlog.Infof(ctx, "hello world")
 
+	fmt.Printf("base: %#v\n\n", ctx)
+
 	ctx = ctxlog.With(ctx, "test", "value")
-	ctxlog.Infof(ctx, "testing with single value")
-	fmt.Printf("%v\n", ctx.(ctxlog.LoggingContext).ToJSON())
+	fmt.Printf("ctxlog 1: %#v\n\n", ctx)
 
 	ctx = ctxlog.With(ctx, "test", "list")
-	ctxlog.Infof(ctx, "testing with multiple values")
-	fmt.Printf("%v\n", ctx.(ctxlog.LoggingContext).ToJSON())
+	fmt.Printf("ctxlog 2: %#v\n\n", ctx)
 
 	clone := ctxlog.Clone(ctx)
+	fmt.Printf("clone: %#v\n\n", clone)
 	cancel()
 
-	fmt.Printf("Original context: %v\nCloned context: %v\n", ctx.Err(), clone.Err())
+	{
+		clone := ctxlog.With(clone, "test", "three")
+		fmt.Printf("nested: %#v\n\n", clone)
+	}
+
+	fmt.Printf("outside: %#v\n\n", clone)
 }
