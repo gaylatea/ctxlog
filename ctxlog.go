@@ -9,6 +9,13 @@ import (
 	"github.com/google/uuid"
 )
 
+// Tag represents a piece of structured information that should be
+// added to a log line.
+type Tag struct {
+	K string
+	V interface{}
+}
+
 var (
 	debug             = flag.Bool("debug", false, "Enable debug logging.")
 	noColorDEPRECATED = flag.Bool("nocolor", false, "Disable colored output.")
@@ -74,6 +81,13 @@ func (c LoggingContext) ToJSON() map[string]interface{} {
 
 // With adds a tag to the context, which is carried into subsequent logging calls.
 func With(ctx context.Context, k string, v interface{}) context.Context {
+	return WithAll(ctx, Tag{K: k, V: v})
+}
+
+// WithAll adds multiple tags at once to a context, which avoids a ton of
+// GC churn when you know you have multiple things to add to a logging
+// statement.
+func WithAll(ctx context.Context, tags ...Tag) context.Context {
 	ret := LoggingContext{
 		tags:  map[string][]interface{}{},
 		order: []string{},
@@ -101,12 +115,15 @@ func With(ctx context.Context, k string, v interface{}) context.Context {
 		ret.tags = make(map[string][]interface{}, 1)
 	}
 
-	_, exists := ret.tags[k]
-	ret.tags[k] = append(ret.tags[k], v)
+	// Add all the tags.
+	for _, x := range tags {
+		_, exists := ret.tags[x.K]
+		ret.tags[x.K] = append(ret.tags[x.K], x.V)
 
-	// Don't print multiple times.
-	if !exists {
-		ret.order = append(ret.order, k)
+		// Don't print multiple times.
+		if !exists {
+			ret.order = append(ret.order, x.K)
+		}
 	}
 
 	return ret
