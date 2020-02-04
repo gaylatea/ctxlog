@@ -250,11 +250,6 @@ func Trace(ctx context.Context, name string, fn func(ctx context.Context) error)
 			V:        name,
 			Override: true,
 		},
-		Tag{
-			K:        "start_time",
-			V:        start.Unix(),
-			Override: true,
-		},
 	)
 	err = fn(ctx)
 
@@ -270,8 +265,17 @@ func Trace(ctx context.Context, name string, fn func(ctx context.Context) error)
 			V:        end.Unix(),
 			Override: true,
 		},
+		Tag{
+			K:        "start_time",
+			V:        start.Unix(),
+			Override: true,
+		},
 	)
 
-	Infof(ctx, "span")
+	if err != nil {
+		Infof(ctx, "span")
+	} else {
+		Errorf(ctx, "span")
+	}
 	return err
 }
