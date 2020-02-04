@@ -55,7 +55,7 @@ func (cs *ConsoleSink) Log(ctx context.Context, c *color.Color, levelname string
 	}
 
 	// Always include the global UUID in logs, at the end.
-	s = fmt.Sprintf("%s %s=%s", s, c.Sprint("uuid"), globalUUID.String())
+	s = fmt.Sprintf("%s %s=%s", s, c.Sprint("instance_id"), globalUUID.String())
 	fmt.Println(s)
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/google/uuid"
@@ -14,6 +15,9 @@ import (
 type Tag struct {
 	K string
 	V interface{}
+
+	// Should this tag override anything that is already there?
+	Override bool
 }
 
 var (
@@ -63,7 +67,7 @@ type LoggingContext struct {
 // logging to an external database.
 func (c LoggingContext) ToJSON() map[string]interface{} {
 	ret := map[string]interface{}{
-		"uuid": globalUUID.String(),
+		"instance_id": globalUUID.String(),
 	}
 
 	for k, v := range c.tags {
@@ -117,12 +121,15 @@ func WithAll(ctx context.Context, tags ...Tag) context.Context {
 
 	// Add all the tags.
 	for _, x := range tags {
-		_, exists := ret.tags[x.K]
-		ret.tags[x.K] = append(ret.tags[x.K], x.V)
-
 		// Don't print multiple times.
-		if !exists {
+		if _, exists := ret.tags[x.K]; !exists {
 			ret.order = append(ret.order, x.K)
+		}
+
+		if x.Override {
+			ret.tags[x.K] = []interface{}{x.V}
+		} else {
+			ret.tags[x.K] = append(ret.tags[x.K], x.V)
 		}
 	}
 
@@ -206,4 +213,65 @@ func Errorf(ctx context.Context, msg string, args ...interface{}) {
 func Fatalf(ctx context.Context, msg string, args ...interface{}) {
 	logf(ctx, fatalC, "FATAL", msg, args...)
 	os.Exit(1)
+}
+
+// Trace allows nested logging of operations.
+// TODO: make a version of this that can log across multiple pageviews/RPCs.
+func Trace(ctx context.Context, name string, fn func(ctx context.Context) error) error {
+	switch ctx.(type) {
+	case LoggingContext:
+		c := ctx.(LoggingContext)
+
+		if n, ok := c.tags["span_id"]; ok {
+			ctx = WithAll(ctx, Tag{
+				K:        "parent_id",
+				V:        n[0],
+				Override: true,
+			})
+		}
+	default:
+	}
+
+	spanID, err := uuid.NewRandom()
+	if err != nil {
+		Errorf(ctx, "could not generate span ID: %v", err)
+		return err
+	}
+
+	start := time.Now()
+	ctx = WithAll(ctx,
+		Tag{
+			K:        "span_id",
+			V:        spanID.String(),
+			Override: true,
+		},
+		Tag{
+			K:        "name",
+			V:        name,
+			Override: true,
+		},
+		Tag{
+			K:        "start_time",
+			V:        start.Unix(),
+			Override: true,
+		},
+	)
+	err = fn(ctx)
+
+	end := time.Now()
+	ctx = WithAll(ctx,
+		Tag{
+			K:        "dur_ms",
+			V:        end.Sub(start).Milliseconds(),
+			Override: true,
+		},
+		Tag{
+			K:        "end_time",
+			V:        end.Unix(),
+			Override: true,
+		},
+	)
+
+	Infof(ctx, "span")
+	return err
 }

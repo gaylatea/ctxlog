@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"time"
 
 	"github.com/silversupreme/ctxlog"
 )
@@ -32,4 +33,19 @@ func main() {
 	}
 
 	fmt.Printf("outside: %#v\n\n", clone)
+
+	ctxlog.Trace(ctx, "repl", func(ctx context.Context) error {
+		ctxlog.Infof(ctx, "test trace")
+
+		ctxlog.Trace(ctx, "SampleRPC", func(ctx context.Context) error {
+			ctxlog.Trace(ctx, "Link", func(ctx context.Context) error {
+				return nil
+			})
+
+			time.Sleep(10 * time.Millisecond)
+			return nil
+		})
+
+		return nil
+	})
 }
