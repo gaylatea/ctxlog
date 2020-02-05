@@ -272,7 +272,7 @@ func Trace(ctx context.Context, name string, fn func(ctx context.Context) error)
 		},
 	)
 
-	if err != nil {
+	if err == nil {
 		Infof(ctx, "span")
 	} else {
 		Errorf(ctx, "span")
