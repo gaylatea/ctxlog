@@ -3,6 +3,7 @@ package ctxlog
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -33,7 +34,7 @@ type ConsoleSink struct{}
 func (cs *ConsoleSink) Log(ctx context.Context, c *color.Color, levelname string, msg string, args ...interface{}) error {
 	// TODO(silversupreme): Implement some logging to like JSON here when not attached to a TTY.
 	msg = fmt.Sprintf(msg, args...)
-	s := fmt.Sprintf("[%s] %-40s", c.Sprintf("%-6s", levelname), msg)
+	s := fmt.Sprintf("[%s] (%-30s) %-40s", c.Sprintf("%-6s", levelname), time.Now().Format(time.RFC3339Nano), msg)
 
 	switch ctx.(type) {
 	case LoggingContext:

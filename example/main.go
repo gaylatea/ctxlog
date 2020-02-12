@@ -39,6 +39,8 @@ func main() {
 
 		ctxlog.Trace(ctx, "SampleRPC", func(ctx context.Context) error {
 			ctxlog.Trace(ctx, "Link", func(ctx context.Context) error {
+				ctxlog.AppendToTrace(ctx, "append", "works")
+				fmt.Printf("%#v\n\n", ctx)
 				return nil
 			})
 

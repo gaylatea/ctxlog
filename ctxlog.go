@@ -279,3 +279,20 @@ func Trace(ctx context.Context, name string, fn func(ctx context.Context) error)
 	}
 	return err
 }
+
+// AppendToTrace is a helper function to append information to a traced
+// context. It's mostly used for logging request information for
+// browser clients.
+func AppendToTrace(ctx context.Context, k string, v interface{}) {
+	switch ctx.(type) {
+	case LoggingContext:
+		c := ctx.(LoggingContext)
+		c.order = append(c.order, k)
+
+		c.tags[k] = []interface{}{v}
+		ctx = c
+	default:
+		// Upgrade contexts here? There's very little circumstances where this
+		// would happen.
+	}
+}
