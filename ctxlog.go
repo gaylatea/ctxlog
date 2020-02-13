@@ -42,6 +42,12 @@ func init() {
 		debugC.DisableColor()
 		errC.DisableColor()
 		fatalC.DisableColor()
+	} else {
+		// Always force color otherwise.
+		infoC.EnableColor()
+		debugC.EnableColor()
+		errC.EnableColor()
+		fatalC.EnableColor()
 	}
 
 	id, err := uuid.NewRandom()
